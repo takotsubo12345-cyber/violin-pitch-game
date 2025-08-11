@@ -1,6 +1,6 @@
 // app.js（変更あり）
-// 花火の発生位置を「五線譜の左右中央・やや下」に変更。
-// 聞き取り中は開始ボタンを緑背景＋赤文字で表示。停止で灰色に戻す。
+// 花火位置を「五線譜の左右中央・やや下」基準に修正。可能ならターゲット音位置に追従。
+// 聞き取り中は開始ボタンを緑背景×赤文字（CSSは body.running #start）。
 import { A4, getKeys, makeExerciseAll, letterFreqWithAcc } from "./scales.js";
 import { renderTwoBars } from "./score.js";
 
@@ -9,6 +9,7 @@ const $$ = (s)=>document.querySelectorAll(s);
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const now=()=>performance.now();
 
+// 軽量トースト
 function showToast(msg,type="info",tiny=false){
   const t=$("#toast"); if(!t) return;
   t.textContent = msg; t.className = tiny?`show tiny ${type}`:`show ${type}`;
@@ -38,21 +39,15 @@ const ui = {
   diffSel: $("#difficulty"),
   db: $("#db-indicator"),
   ver: $("#app-version"),
-
   start: $("#start"), stop: $("#stop"), game: $("#game"),
-
   bigScore: $("#big-score"), advice: $("#advice"),
   bar: $("#cents-bar"), barNeedle: $("#bar-needle"),
-
-  staffWrap: $("#staff-wrap"), spark: $("#spark"),
+  staffWrap: $("#staff-wrap"), staff: $("#staff"), spark: $("#spark"),
   prog: $("#prog"), pageLabel: $("#page-label"),
-
   gate: $("#gate"),
   result: $("#result"), praise: $("#praise"), details: $("#details"),
   again: $("#again"), close: $("#close"),
-
   noSleep: $("#nosleep"),
-
   modeName: $("#mode-name"), timer: $("#timer"),
 };
 
@@ -86,7 +81,7 @@ let state = {
   endClock: 0,
 };
 
-// ===== 可視・離脱監視：即停止 =====
+// ===== 可視・離脱監視：即停止（iOS対策の監視タイマも併用） =====
 function stopAllTracks(){
   try{ state.stream?.getTracks?.().forEach(t=>{ try{ t.stop(); }catch{} }); }catch{}
 }
@@ -97,17 +92,13 @@ function closeAudio(){
 function hardStop(reason=""){
   try{ cancelAnimationFrame(state.rafId); }catch{}
   try{ state.source?.disconnect(); state.hpf?.disconnect(); state.peak?.disconnect(); }catch{}
-  stopAllTracks();
-  closeAudio();
+  stopAllTracks(); closeAudio();
   state.stream = null; state.ac=null; state.analyser=null; state.buf=null;
   state.source=null; state.hpf=null; state.peak=null;
-  if(state.running){ document.body.classList.remove("running"); }
-  state.running=false;
-  ui.stop.disabled = true;
+  state.running=false; document.body.classList.remove("running");
   // iOS Safariガード：遅延でもう一度停止
   setTimeout(()=>{ stopAllTracks(); closeAudio(); }, 800);
 }
-
 ["visibilitychange","webkitvisibilitychange","pagehide","freeze","blur","beforeunload"].forEach(ev=>{
   const handler = ()=>{
     state.visible = document.visibilityState === "visible";
@@ -118,8 +109,10 @@ function hardStop(reason=""){
   const target = (ev==="visibilitychange"||ev==="webkitvisibilitychange") ? document : window;
   target.addEventListener(ev, handler, {passive:true,capture:true});
 });
+// 監視タイマ（600–1200ms間隔で可視状態を確認）
+setInterval(()=>{ if(state.running && document.visibilityState!=="visible") hardStop("監視タイマで停止"); }, 900);
 
-// 譜面非表示でも停止
+// 譜面が見えなくなったら停止
 const screenObserver = new IntersectionObserver((entries)=>{
   entries.forEach(e=>{
     if(state.running && !e.isIntersecting) hardStop("譜面が非表示で停止");
@@ -140,17 +133,15 @@ function onScaleParamChange(){
   const st = [...ui.scaleType].find(i=>i.checked)?.value || "major";
   const lv = [...ui.level].find(i=>i.checked)?.value || "intermediate";
   state.scaleType = st; state.level = lv;
-  populateKeys();
-  state.key = ui.keySel.value;
-  loadExercise();
+  populateKeys(); state.key = ui.keySel.value; loadExercise();
 }
 ui.keySel.addEventListener("change", ()=>{ state.key = ui.keySel.value; loadExercise(); });
 ui.scaleType.forEach(r=>r.addEventListener("change", onScaleParamChange));
 ui.level.forEach(r=>r.addEventListener("change", onScaleParamChange));
 ui.diffSel.addEventListener("change", ()=>{ state.diffCents = difficultyToCents[ui.diffSel.value]; });
 
-// 🎮アーケード（32問、C6以下・G3以上、直前と同じ音名(#/b含む)禁止）
-import { makeExerciseAll, letterFreqWithAcc, A4 } from "./scales.js";
+// 🎮アーケード（32問、C6以下・G3以上、直前と同じ音名(#/b含む)は不可）
+import { makeExerciseAll, letterFreqWithAcc } from "./scales.js";
 function makeArcadeSet(){
   const C6 =  letterFreqWithAcc({letter:"C",acc:"",octave:6}, A4);
   const G3 =  letterFreqWithAcc({letter:"G",acc:"",octave:3}, A4);
@@ -158,7 +149,7 @@ function makeArcadeSet(){
     const f = letterFreqWithAcc(n, A4);
     return f>=G3 && f<=C6;
   });
-  const keyOf = (n)=>`${n.letter}${n.acc||""}`; // オクターブ無視
+  const keyOf = (n)=>`${n.letter}${n.acc||""}`;
   const pick=()=>all[(Math.random()*all.length)|0];
   const out=[]; let prevKey="";
   for(let i=0;i<32;i++){
@@ -167,6 +158,23 @@ function makeArcadeSet(){
     out.push(p); prevKey=k;
   }
   return out;
+}
+
+let pageAPI = null;
+function renderPage(){
+  pageAPI = renderTwoBars({ key: state.key, notes: state.notes, offset: state.offset });
+  for(let i=0;i<16;i++) pageAPI.recolor(i, "note-normal");
+  highlightCurrentNote();
+}
+function updateProgressUI(){
+  ui.prog.textContent = `音 ${state.idx+1}/${state.total}`;
+  const firstBar = Math.floor(state.offset/8)+1;
+  const lastBar = Math.min(firstBar+1, state.totalBars);
+  ui.pageLabel.textContent = `小節 ${firstBar}–${lastBar} / 全 ${state.totalBars} 小節`;
+}
+function highlightCurrentNote(){
+  const rel = state.idx - state.offset;
+  for(let i=0;i<16;i++) pageAPI.recolor(i, i===rel ? "note-target" : "note-normal");
 }
 
 function loadExercise(){
@@ -189,29 +197,16 @@ function fmtTime(ms){
   return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}.${String(x).padStart(3,"0")}`;
 }
 
-let pageAPI = null;
-function renderPage(){
-  pageAPI = renderTwoBars({ key: state.key, notes: state.notes, offset: state.offset });
-  for(let i=0;i<16;i++) pageAPI.recolor(i, "note-normal");
-  highlightCurrentNote();
-}
-function updateProgressUI(){
-  ui.prog.textContent = `音 ${state.idx+1}/${state.total}`;
-  const firstBar = Math.floor(state.offset/8)+1;
-  const lastBar = Math.min(firstBar+1, state.totalBars);
-  ui.pageLabel.textContent = `小節 ${firstBar}–${lastBar} / 全 ${state.totalBars} 小節`;
-}
-function highlightCurrentNote(){
-  const rel = state.idx - state.offset;
-  for(let i=0;i<16;i++) pageAPI.recolor(i, i===rel ? "note-target" : "note-normal");
-}
-
-// 許可イベント（開始ボタン → ゲート表示 → 許可時のみ start()）
+// 許可フロー：開始→ゲート→許可→start()
 window.addEventListener("app-permit", async ()=>{
-  try { await start(); } catch{} 
+  try { await start(); } catch(err){ /* noop */ }
 });
 
-// ゲーム切替
+// ボタン
+ui.stop.addEventListener("click", ()=>{
+  hardStop("停止ボタン");
+  loadExercise(); // 初期化
+});
 ui.game.addEventListener("click", ()=>{
   const pressed = ui.game.getAttribute("aria-pressed")==="true";
   if(pressed){
@@ -229,20 +224,16 @@ ui.game.addEventListener("click", ()=>{
   }
 });
 
-// 停止：マイクOFF＋見た目リセット
-ui.stop.addEventListener("click", ()=>{
-  hardStop("停止ボタン");
-  loadExercise();
-});
-
 // 完了
-$("#again").addEventListener("click", ()=>{
-  $("#result").classList.remove("show"); $("#result").setAttribute("aria-hidden","true");
+ui.again.addEventListener("click", ()=>{
+  ui.result.classList.remove("show"); ui.result.setAttribute("aria-hidden","true");
   loadExercise();
 });
-$("#close").addEventListener("click", ()=>{ $("#result").classList.remove("show"); $("#result").setAttribute("aria-hidden","true"); });
+ui.close.addEventListener("click", ()=>{
+  ui.result.classList.remove("show"); ui.result.setAttribute("aria-hidden","true");
+});
 
-// 音声開始（ここでのみマイクON）
+// 音声開始（ここでのみマイクON）＋開始ボタンの色は body.running で制御
 async function start(){
   if(!state.visible){ showToast("画面が見えていません","warn"); return; }
   if(state.running) return;
@@ -259,19 +250,18 @@ async function start(){
   const hpf = ac.createBiquadFilter(); hpf.type="highpass"; hpf.frequency.value=90; hpf.Q.value=0.7;
   const peak = ac.createBiquadFilter(); peak.type="peaking"; peak.frequency.value=2500; peak.Q.value=1; peak.gain.value=5;
   const analyser = ac.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.0;
-
   src.connect(hpf); hpf.connect(peak); peak.connect(analyser);
 
   state.ac = ac; state.stream = stream; state.analyser = analyser;
   state.source = src; state.hpf = hpf; state.peak = peak;
   state.buf = new Float32Array(analyser.fftSize);
   state.running = true; document.body.classList.add("running");
-  ui.stop.disabled = false;
 
   const g=document.getElementById("gate"); if(g){ g.classList.remove("show"); g.setAttribute("aria-hidden","true"); }
   loop();
 }
 
+// 検出
 const fMin=110, fMax=2200;
 function hamming(i,N){ return 0.54 - 0.46 * Math.cos(2*Math.PI*i/(N-1)); }
 function autoCorrelate(buf,sr){
@@ -316,7 +306,7 @@ function isWrongOctave(freq, fRef, passBand){
   return Math.abs(cents) <= passBand;
 }
 
-// ============ 花火（五線譜の左右中央・やや下で発火） ============
+// ===== 花火：五線譜の左右中央・やや下（基準）。可能ならターゲット音位置で発火。 =====
 const sparks = [];
 let sparkRunning = false;
 function ensureSparkLoop(){
@@ -324,11 +314,7 @@ function ensureSparkLoop(){
   const cvs = ui.spark; const ctx = cvs.getContext("2d");
   function loop(){
     if(!sparkRunning) return;
-    const DPR = Math.max(1, window.devicePixelRatio || 1);
-    const W = cvs.clientWidth, H = cvs.clientHeight;
-    if(cvs.width!==Math.floor(W*DPR) || cvs.height!==Math.floor(H*DPR)){
-      cvs.width = Math.floor(W*DPR); cvs.height = Math.floor(H*DPR); ctx.setTransform(DPR,0,0,DPR,0,0);
-    }
+    const W = cvs.width=cvs.clientWidth; const H=cvs.height=cvs.clientHeight;
     ctx.clearRect(0,0,W,H);
     const t = now();
     for(let i=sparks.length-1;i>=0;i--){
@@ -352,8 +338,18 @@ function ensureSparkLoop(){
   }
   requestAnimationFrame(loop);
 }
+function staffToCanvas(xy){
+  // score.js の getXY() が #staff 内座標(px)を返す前提でキャンバス座標へ変換
+  const sr = ui.staff.getBoundingClientRect();
+  const cr = ui.spark.getBoundingClientRect();
+  return { x: xy.x + (sr.left - cr.left), y: xy.y + (sr.top - cr.top) };
+}
+function defaultCenter(){
+  const w = ui.spark.clientWidth||ui.spark.width||0;
+  const h = ui.spark.clientHeight||ui.spark.height||0;
+  return { x: w/2, y: h*0.62 }; // 左右中央・やや下
+}
 function addBurst(x,y,{count=460, life=2100, color="hsl(140,100%,65%)", big=1.6}={}){
-  const cvs = ui.spark;
   const spread = 1 + big*0.9;
   for(let i=0;i<count;i++){
     const ang = Math.random()*Math.PI*2;
@@ -379,26 +375,25 @@ function addOcto(x,y,many=false){
   }
   ensureSparkLoop();
 }
-function fireworkFor(score, centsAbs){
-  const cvs = ui.spark;
-  // 五線譜の左右中央、やや下（60〜65%）で発火
-  const W = cvs.clientWidth || cvs.width;
-  const H = cvs.clientHeight || cvs.height;
-  const cx = W * 0.5;
-  const cy = H * 0.62;
-
+function fireworkFor(score, centsAbs, xyNote /*{x,y}*/){
+  let pos;
+  if(xyNote && Number.isFinite(xyNote.x) && Number.isFinite(xyNote.y)){
+    pos = staffToCanvas(xyNote);
+  } else {
+    pos = defaultCenter();
+  }
   const base = Math.round(50 * Math.exp((score-85)/5.3));
   const count = clamp(base, 50, 900);
   let col, flash;
   if(centsAbs<=1){ col="hsl(5,100%,63%)"; flash="rgba(255,80,80,.50)"; }
   else if(centsAbs<=3){ col="hsl(210,100%,65%)"; flash="rgba(110,170,255,.50)"; }
   else { col="hsl(140,100%,62%)"; flash="rgba(90,230,170,.50)"; }
-  addBurst(cx, cy, {count, life: 2400, color: col, big: (score>=98?2.0:1.5)});
+  addBurst(pos.x, pos.y, {count, life: 2400, color: col, big: (score>=98?2.0:1.5)});
   hudFlash(flash, score>=99?1: score>=95?0.85:0.65);
-  if(centsAbs<=0.5){ addOcto(cx, cy-10, true); }
+  if(centsAbs<=0.5){ addOcto(pos.x, pos.y-10, true); }
 }
 
-// メインループ
+// 解析ループ
 function loop(){
   if(!state.running || !state.analyser){ return; }
   state.rafId = requestAnimationFrame(loop);
@@ -437,7 +432,8 @@ function loop(){
   if(abs <= passBand){
     if(state.passRecorded[state.idx]==null){
       state.passRecorded[state.idx] = score;
-      fireworkFor(score, abs);
+      const xy = pageAPI.getXY(rel);  // 可能ならターゲット音の座標を使用
+      fireworkFor(score, abs, xy);
       if(rel===15){ state.lockUntil = performance.now() + 180; goNextNote(); return; }
       state.lockUntil = performance.now() + 200;
       goNextNote(); return;
@@ -466,10 +462,25 @@ function goNextNote(){
   highlightCurrentNote(); updateProgressUI();
 }
 
-// 初期ロード（中級をデフォルト）
+// バージョン
 ui.ver.textContent = "v1.0.0";
+
+// 初期ロード（中級をデフォルト）
 function populateAndLoad(){
   state.scaleType="major"; state.level="intermediate";
   populateKeys(); loadExercise();
 }
 populateAndLoad();
+
+// DB・助言（最後に配置）
+function updateDB(db){
+  const el = ui.db;
+  el.textContent = `${db} dB`;
+  el.style.background = db>=80?"#3b0e0e": db>=70?"#3b2a0e": db>=40?"#0e2f1f":"#0d1117";
+}
+function setAdvice(c){
+  const abs=Math.abs(c); const a=ui.advice;
+  if(abs>50){ a.className="bad"; a.textContent="頑張ろう！"; }
+  else if(abs>15){ a.className="warn"; a.textContent=`${Math.round(abs)}c ${c>0?"高い":"低い"}`; }
+  else { a.className="good"; a.textContent="いい感じ！"; }
+}
