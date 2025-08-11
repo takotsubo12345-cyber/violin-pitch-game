@@ -1,4 +1,4 @@
-/* style.css（変更あり） */
+/* style.css */
 :root{
   --bg:#0b0d12; --bg-arcade:#120a1e; --fg:#e8eef7; --accent:#2dd4bf; --line:#1f2937;
   --good:#10b981; --mid:#f59e0b; --bad:#ef4444; --violet:#7c3aed;
@@ -25,13 +25,13 @@ body.arcade{ background: radial-gradient(1200px 400px at 50% -10%, #2a1a4a, var(
 .seg label{padding:8px 10px;font-size:12px;cursor:pointer;background:#0f1822;color:#c9d5e3;user-select:none}
 .seg input:checked+label{background:#1c2532;color:#fff;font-weight:800}
 
-/* ボタン：開始は状態で色切替（初期=灰、実行中=緑背景×赤文字） */
+/* ボタン */
 button{padding:10px 12px;border:0;border-radius:12px;font-weight:800;background:#111827;color:var(--fg);cursor:pointer}
-#start{background:#6b7280;color:#111827}               /* 初期=灰 */
-body.running #start{background:#10b981;color:#ff4d4d}  /* 聞き取り中=緑×赤文字 */
-#stop{background:#374151}
-#game{background:#6b7280}                 /* OFFはグレー */
-#game[aria-pressed="true"]{background:#7c3aed; box-shadow:0 0 0 2px #a78bfa inset;} /* ONで紫強調 */
+#start{background:#6b7280;color:#e5e7eb}                 /* 初期＝灰 */
+body.running #start{background:#10b981;color:#ff4d4d}   /* 聞き取り中＝緑背景 赤文字 */
+#stop{background:#6b7280}
+#game{background:#6b7280}
+#game[aria-pressed="true"]{background:#7c3aed; box-shadow:0 0 0 2px #a78bfa inset;}
 
 main{padding:8px 10px 14px;max-width:880px;margin:0 auto}
 #hud{display:block}
@@ -57,22 +57,30 @@ main{padding:8px 10px 14px;max-width:880px;margin:0 auto}
 /* 譜面 */
 #score-area{margin-top:8px}
 .score-head{display:flex;align-items:center;justify-content:space-between;margin:2px 0 6px 0}
-/* 幅をわずかに狭め（中央寄せ）＋線間距離を若干狭く（縦縮小） */
-#staff-wrap{position:relative;width:94%;margin:0 auto;height:320px;background:#0f131a;border:1px solid var(--line);border-radius:12px;overflow:visible}
-@media (max-width:640px){ #staff-wrap{width:94%;height:300px} }
-#staff svg{transform-origin:top left; transform:scaleY(0.94);} /* 線間距離を狭める */
+/* 幅をわずかに狭める（中央寄せ） */
+#staff-wrap{position:relative;width:96%;margin:0 auto;height:320px;background:#0f131a;border:1px solid var(--line);border-radius:12px;overflow:visible}
+@media (max-width:640px){ #staff-wrap{width:96%;height:300px} }
 
-#spark{position:absolute;inset:-80px -80px -80px -80px; pointer-events:none;z-index:0}
+/* 花火キャンバスは画面基準で固定表示（他ウィンドウに影響されない） */
+#spark{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:9996;
+}
+
 #staff{position:absolute;inset:0;z-index:1}
+/* 線間距離をわずかに狭く（縦縮小） */
+#staff svg{transform:scaleY(.92); transform-origin:center}
 #credit{position:absolute;right:8px;bottom:6px;font-size:11px;color:#94a3b8;opacity:.8}
 
 .note-normal{fill:#e8eef7;stroke:#e8eef7}
 .note-target{fill:#22c55e;stroke:#22c55e}
 .note-failed{fill:#ef4444;stroke:#ef4444}
 
-/* 加線をゲームモードで強調（VexFlow / フォールバック両対応） */
-body.arcade .vf-stavenote .vf-ledger line{stroke-width:2.8px!important;opacity:1!important}
-body.arcade .ledger-line{stroke:#e5e7eb!important;stroke-width:2.8px!important;opacity:1!important}
+/* ゲームモード時：加線を強調（VexFlow/自前両対応） */
+body.arcade .vf-stavenote .vf-ledger line{stroke:#fff!important;stroke-width:3px!important;opacity:1!important;filter:drop-shadow(0 0 4px rgba(255,255,255,.85))}
+body.arcade .ledger-line{stroke:#fff!important;stroke-width:3px!important;opacity:1!important;filter:drop-shadow(0 0 4px rgba(255,255,255,.85))}
 
 #prog{font-size:12px;opacity:.9}
 #page-label{font-size:11px;color:#9ca3af}
@@ -83,15 +91,3 @@ body.arcade .ledger-line{stroke:#e5e7eb!important;stroke-width:2.8px!important;o
 #toast{position:fixed;left:0;right:0;bottom:0;padding:8px 10px;font-size:12px;text-align:center;background:rgba(40,40,40,.95);color:#fff;transform:translateY(100%);transition:transform .25s ease;z-index:9999}
 #toast.show{transform:translateY(0)}
 #toast.warn{background:#d97706} #toast.error{background:#b91c1c} #toast.info{background:#374151}
-#toast.tiny{font-size:11px;padding:6px 8px}
-
-/* モーダル */
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:9998}
-.modal.show{display:flex}
-.modal .card{width:min(92%,540px); background:#0b1020; border:1px solid #20304a; border-radius:14px; padding:16px; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.5);}
-.modal .label{font-size:13px;opacity:.8;margin-bottom:6px}
-#praise{font-size:18px;margin:6px 0}
-#details{font-size:12px;opacity:.85;margin-bottom:8px}
-.modal .buttons{display:flex;gap:8px}
-#again{background:#10b981} #close{background:#374151}
-#permit{background:#2563eb}
