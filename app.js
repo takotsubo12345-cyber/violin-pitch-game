@@ -1,6 +1,6 @@
 // app.js（変更あり）
-// 🎮モード：C6以下・連続で同じ音名（#/b含む）は禁止（オクターブ違いも禁止）・32問。
-// マイクは「開始→結果表示」間のみON。停止/離脱/非可視で完全停止。
+// 花火の発生位置を「五線譜の左右中央・やや下」に変更。
+// 聞き取り中は開始ボタンを緑背景＋赤文字で表示。停止で灰色に戻す。
 import { A4, getKeys, makeExerciseAll, letterFreqWithAcc } from "./scales.js";
 import { renderTwoBars } from "./score.js";
 
@@ -9,8 +9,6 @@ const $$ = (s)=>document.querySelectorAll(s);
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const now=()=>performance.now();
 
-const errors = new Set();
-function pushErr(msg){ const line = `${new Date().toISOString()} : ${msg}`; if(!errors.has(line)) errors.add(line); }
 function showToast(msg,type="info",tiny=false){
   const t=$("#toast"); if(!t) return;
   t.textContent = msg; t.className = tiny?`show tiny ${type}`:`show ${type}`;
@@ -103,12 +101,13 @@ function hardStop(reason=""){
   closeAudio();
   state.stream = null; state.ac=null; state.analyser=null; state.buf=null;
   state.source=null; state.hpf=null; state.peak=null;
-  state.running=false; document.body.classList.remove("running");
-  ui.start.disabled = false; ui.stop.disabled = true;
+  if(state.running){ document.body.classList.remove("running"); }
+  state.running=false;
+  ui.stop.disabled = true;
   // iOS Safariガード：遅延でもう一度停止
   setTimeout(()=>{ stopAllTracks(); closeAudio(); }, 800);
-  if(reason) pushErr(reason);
 }
+
 ["visibilitychange","webkitvisibilitychange","pagehide","freeze","blur","beforeunload"].forEach(ev=>{
   const handler = ()=>{
     state.visible = document.visibilityState === "visible";
@@ -120,7 +119,7 @@ function hardStop(reason=""){
   target.addEventListener(ev, handler, {passive:true,capture:true});
 });
 
-// 譜面非表示でも停止（積極的に切る）
+// 譜面非表示でも停止
 const screenObserver = new IntersectionObserver((entries)=>{
   entries.forEach(e=>{
     if(state.running && !e.isIntersecting) hardStop("譜面が非表示で停止");
@@ -129,6 +128,7 @@ const screenObserver = new IntersectionObserver((entries)=>{
 screenObserver.observe(ui.staffWrap);
 
 // スケールUI
+import { getKeys } from "./scales.js";
 function populateKeys(){
   const st = state.scaleType, lv = state.level;
   const keys = getKeys(st, lv);
@@ -149,7 +149,8 @@ ui.scaleType.forEach(r=>r.addEventListener("change", onScaleParamChange));
 ui.level.forEach(r=>r.addEventListener("change", onScaleParamChange));
 ui.diffSel.addEventListener("change", ()=>{ state.diffCents = difficultyToCents[ui.diffSel.value]; });
 
-// 🎮アーケード（32問、C6以下・G3以上、直前と同じ音名(#/b含)は不可）
+// 🎮アーケード（32問、C6以下・G3以上、直前と同じ音名(#/b含む)禁止）
+import { makeExerciseAll, letterFreqWithAcc, A4 } from "./scales.js";
 function makeArcadeSet(){
   const C6 =  letterFreqWithAcc({letter:"C",acc:"",octave:6}, A4);
   const G3 =  letterFreqWithAcc({letter:"G",acc:"",octave:3}, A4);
@@ -207,32 +208,31 @@ function highlightCurrentNote(){
 
 // 許可イベント（開始ボタン → ゲート表示 → 許可時のみ start()）
 window.addEventListener("app-permit", async ()=>{
-  try { await start(); } catch(err){ pushErr(err.message||String(err)); }
+  try { await start(); } catch{} 
 });
 
-// ボタン
-// （開始ボタン自体のクリックで直接startは呼ばず、ゲート→許可でstart）
-ui.stop.addEventListener("click", ()=>{
-  hardStop("停止ボタン");
-  loadExercise(); // 初期化（許可は自動では出さない）
-});
+// ゲーム切替
 ui.game.addEventListener("click", ()=>{
   const pressed = ui.game.getAttribute("aria-pressed")==="true";
   if(pressed){
-    // OFF → 通常
     ui.game.setAttribute("aria-pressed","false");
     document.body.classList.remove("arcade");
     state.mode = "scale";
     loadExercise();
     showToast("🎼 通常スケール", "info", true);
   }else{
-    // ON → アーケード
     ui.game.setAttribute("aria-pressed","true");
     document.body.classList.add("arcade");
     state.mode = "arcade";
     loadExercise();
     showToast("🎮 ランダム32問（C6まで・連続同音名禁止）", "info", true);
   }
+});
+
+// 停止：マイクOFF＋見た目リセット
+ui.stop.addEventListener("click", ()=>{
+  hardStop("停止ボタン");
+  loadExercise();
 });
 
 // 完了
@@ -266,18 +266,12 @@ async function start(){
   state.source = src; state.hpf = hpf; state.peak = peak;
   state.buf = new Float32Array(analyser.fftSize);
   state.running = true; document.body.classList.add("running");
-  ui.start.disabled = true; ui.stop.disabled = false;
-  // ゲートは閉じる（index.html側が閉じるが念のため）
+  ui.stop.disabled = false;
+
   const g=document.getElementById("gate"); if(g){ g.classList.remove("show"); g.setAttribute("aria-hidden","true"); }
   loop();
 }
 
-function nearestSemitoneCents(freq){
-  if(freq<=0) return 0;
-  const n = Math.round(12*Math.log2(freq/A4));
-  const ref = A4 * Math.pow(2, n/12);
-  return 1200*Math.log2(freq/ref);
-}
 const fMin=110, fMax=2200;
 function hamming(i,N){ return 0.54 - 0.46 * Math.cos(2*Math.PI*i/(N-1)); }
 function autoCorrelate(buf,sr){
@@ -322,7 +316,7 @@ function isWrongOctave(freq, fRef, passBand){
   return Math.abs(cents) <= passBand;
 }
 
-// ============ 花火（五線譜の中央で発火） ============
+// ============ 花火（五線譜の左右中央・やや下で発火） ============
 const sparks = [];
 let sparkRunning = false;
 function ensureSparkLoop(){
@@ -330,7 +324,11 @@ function ensureSparkLoop(){
   const cvs = ui.spark; const ctx = cvs.getContext("2d");
   function loop(){
     if(!sparkRunning) return;
-    const W = cvs.width=cvs.clientWidth; const H=cvs.height=cvs.clientHeight;
+    const DPR = Math.max(1, window.devicePixelRatio || 1);
+    const W = cvs.clientWidth, H = cvs.clientHeight;
+    if(cvs.width!==Math.floor(W*DPR) || cvs.height!==Math.floor(H*DPR)){
+      cvs.width = Math.floor(W*DPR); cvs.height = Math.floor(H*DPR); ctx.setTransform(DPR,0,0,DPR,0,0);
+    }
     ctx.clearRect(0,0,W,H);
     const t = now();
     for(let i=sparks.length-1;i>=0;i--){
@@ -381,10 +379,14 @@ function addOcto(x,y,many=false){
   }
   ensureSparkLoop();
 }
-function fireworkFor(score, centsAbs /*xy無視して中央で発火*/){
+function fireworkFor(score, centsAbs){
   const cvs = ui.spark;
-  const cx = (cvs.width||cvs.clientWidth)/2;
-  const cy = (cvs.height||cvs.clientHeight)/2;
+  // 五線譜の左右中央、やや下（60〜65%）で発火
+  const W = cvs.clientWidth || cvs.width;
+  const H = cvs.clientHeight || cvs.height;
+  const cx = W * 0.5;
+  const cy = H * 0.62;
+
   const base = Math.round(50 * Math.exp((score-85)/5.3));
   const count = clamp(base, 50, 900);
   let col, flash;
@@ -400,7 +402,6 @@ function fireworkFor(score, centsAbs /*xy無視して中央で発火*/){
 function loop(){
   if(!state.running || !state.analyser){ return; }
   state.rafId = requestAnimationFrame(loop);
-  const t = now(); const dt = (state.lastT? (t-state.lastT)/1000 : 0.016); state.lastT=t;
 
   if(state.startClock){ ui.timer.textContent = fmtTime(performance.now()-state.startClock); }
 
@@ -436,7 +437,6 @@ function loop(){
   if(abs <= passBand){
     if(state.passRecorded[state.idx]==null){
       state.passRecorded[state.idx] = score;
-      // 中央でド派手に
       fireworkFor(score, abs);
       if(rel===15){ state.lockUntil = performance.now() + 180; goNextNote(); return; }
       state.lockUntil = performance.now() + 200;
@@ -458,7 +458,7 @@ function goNextNote(){
     ui.praise.textContent = ok===state.total ? "音階マスター！ 🎉" : "Good job! ✅";
     ui.details.textContent = `${modeStr} / 難易度: ${diffText} / 合格 ${ok}/${state.total} 音、平均 ${isFinite(avg)?avg:0} 点、クリアタイム ${t}`;
     $("#result").classList.add("show"); $("#result").setAttribute("aria-hidden","false");
-    hardStop("完了"); // 結果の間はマイクOFF
+    hardStop("完了");
     return;
   }
   const rel = state.idx - state.offset;
@@ -466,10 +466,8 @@ function goNextNote(){
   highlightCurrentNote(); updateProgressUI();
 }
 
-// バージョン
-ui.ver.textContent = "v1.0.0";
-
 // 初期ロード（中級をデフォルト）
+ui.ver.textContent = "v1.0.0";
 function populateAndLoad(){
   state.scaleType="major"; state.level="intermediate";
   populateKeys(); loadExercise();

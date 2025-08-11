@@ -25,11 +25,12 @@ body.arcade{ background: radial-gradient(1200px 400px at 50% -10%, #2a1a4a, var(
 .seg label{padding:8px 10px;font-size:12px;cursor:pointer;background:#0f1822;color:#c9d5e3;user-select:none}
 .seg input:checked+label{background:#1c2532;color:#fff;font-weight:800}
 
+/* ボタン */
 button{padding:10px 12px;border:0;border-radius:12px;font-weight:800;background:#111827;color:var(--fg);cursor:pointer}
-#start:not(:disabled){background:#10b981}  /* 有効→緑 */
-#start:disabled{background:#6b7280}       /* 無効→灰 */
+#start{background:#6b7280;color:#e5e7eb}                 /* 初期＝灰 */
+body.running #start{background:#10b981;color:#ff4d4d}   /* 聞き取りモード＝緑地に赤文字 */
 #stop{background:#6b7280}
-#game{background:#6b7280}                 /* OFFはグレー */
+#game{background:#6b7280}                                /* OFFはグレー */
 #game[aria-pressed="true"]{background:#7c3aed; box-shadow:0 0 0 2px #a78bfa inset;} /* ONで紫強調 */
 
 main{padding:8px 10px 14px;max-width:880px;margin:0 auto}
@@ -59,6 +60,9 @@ main{padding:8px 10px 14px;max-width:880px;margin:0 auto}
 /* 幅をわずかに狭める（中央寄せ） */
 #staff-wrap{position:relative;width:96%;margin:0 auto;height:320px;background:#0f131a;border:1px solid var(--line);border-radius:12px;overflow:visible}
 @media (max-width:640px){ #staff-wrap{width:96%;height:300px} }
+
+/* 線間距離を若干狭く（縦方向スケール） */
+#staff svg{transform-origin: top center; transform: scaleY(0.92)}
 
 #spark{position:absolute;inset:-80px -80px -80px -80px; /* はみ出し描画 */ pointer-events:none;z-index:0}
 #staff{position:absolute;inset:0;z-index:1}
