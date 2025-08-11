@@ -1,0 +1,166 @@
+<!-- index.html（変更あり） -->
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Violin Scale Trainer 🐙</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <link rel="stylesheet" href="./style.css" />
+
+  <!-- VexFlow（ローカル→CDN。失敗時は自前SVG） -->
+  <script defer src="./lib/vexflow-min.js"></script>
+  <script>
+    (function () {
+      const srcs = [
+        "https://cdn.jsdelivr.net/npm/vexflow@3.0.9/build/vexflow-min.js",
+        "https://unpkg.com/vexflow@3.0.9/build/vexflow-min.js",
+        "https://cdn.jsdelivr.net/npm/vexflow@4.2.3/build/esm/standalone/vexflow-min.js",
+        "https://unpkg.com/vexflow@4.2.3/build/esm/standalone/vexflow-min.js",
+      ];
+      let i = 0;
+      function tryLoad() {
+        if (window.Vex?.Flow || i >= srcs.length) return;
+        const s = document.createElement("script");
+        s.src = srcs[i++];
+        s.defer = true;
+        s.onload = tryLoad;
+        s.onerror = tryLoad;
+        document.head.appendChild(s);
+      }
+      window.addEventListener("DOMContentLoaded", tryLoad, { once: true });
+    })();
+
+    // 許可ボタンの即時フック
+    window.__permit = function () {
+      window.dispatchEvent(new Event("app-permit"));
+      const g = document.getElementById("gate");
+      if (g) { g.classList.remove("show"); g.setAttribute("aria-hidden","true"); }
+    };
+  </script>
+</head>
+<body>
+  <!-- ヘッダー -->
+  <header id="topbar">
+    <div class="left">
+      <span class="brand">Violin Scale Trainer 🐙</span>
+
+      <div class="seg" role="tablist" aria-label="スケール">
+        <input type="radio" id="tab-major" name="scaleType" value="major" checked>
+        <label for="tab-major">長調</label>
+        <input type="radio" id="tab-minor" name="scaleType" value="minor">
+        <label for="tab-minor">短調</label>
+      </div>
+
+      <div class="seg" role="tablist" aria-label="レベル">
+        <input type="radio" id="tab-intermediate" name="level" value="intermediate" checked>
+        <label for="tab-intermediate">中級</label>
+        <input type="radio" id="tab-advanced" name="level" value="advanced">
+        <label for="tab-advanced">上級</label>
+      </div>
+
+      <label class="key-inline">調:
+        <select id="key-select" aria-label="キー選択"></select>
+      </label>
+
+      <label class="diff-inline">難易度:
+        <select id="difficulty" aria-label="難易度">
+          <option value="s-easy">超かんたん (±9c)</option>
+          <option value="easy">かんたん (±7c)</option>
+          <option value="normal" selected>ふつう (±5c)</option>
+          <option value="hard">難しい (±3c)</option>
+          <option value="oni">鬼 (±2c)</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="right">
+      <button id="start">開始</button>
+      <button id="stop" disabled>停止</button>
+      <button id="game" aria-pressed="false" title="🎮 ランダム32問">🎮</button>
+      <span class="a4">A<sub>4</sub>=442Hz</span>
+      <span id="db-indicator" class="db">— dB</span>
+      <span id="app-version" class="version">v1.0.0</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- HUD -->
+    <section id="hud">
+      <div id="score-panel">
+        <div id="big-score" aria-live="polite">—</div>
+        <div id="advice" aria-live="polite">待機中…</div>
+
+        <div id="time-box"><span id="mode-name">音階</span><span id="timer">00:00.000</span></div>
+
+        <div id="bar-wrap">
+          <div id="cents-scale"><span>-50</span><span>-25</span><span>0</span><span>+25</span><span>+50</span></div>
+          <div id="cents-bar">
+            <div id="bar-left-hint">低い</div>
+            <div id="bar-right-hint">高い</div>
+            <div id="bar-needle"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 譜面 -->
+    <section id="score-area">
+      <div class="score-head">
+        <div class="left"><span id="prog" aria-live="polite">音 1/—</span></div>
+        <div class="right"><span id="page-label">小節 1–2 / 全 — 小節</span></div>
+      </div>
+      <div id="staff-wrap">
+        <canvas id="spark"></canvas>
+        <div id="staff"></div>
+        <div id="credit">@takotsubo12345</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 許可ゲート -->
+  <div id="gate" class="modal" aria-hidden="true">
+    <div class="card">
+      <h2>マイクの使用許可</h2>
+      <p>「許可」を押すと開始します。</p>
+      <button id="permit" onclick="window.__permit()">許可</button>
+    </div>
+  </div>
+
+  <!-- 完了 -->
+  <div id="result" class="modal" aria-hidden="true">
+    <div class="card">
+      <div class="label" id="result-title">完了</div>
+      <div id="praise">Great!</div>
+      <div id="details"></div>
+      <div class="buttons"><button id="again">もう一度</button><button id="close">閉じる</button></div>
+    </div>
+  </div>
+
+  <!-- 画面フラッシュ -->
+  <div id="hud-flash"></div>
+  <div id="toast" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- スリープ抑止 -->
+  <video id="nosleep" muted playsinline loop style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+    <source src="data:video/mp4;base64,AAAAHGZ0eXBpc28yAAAAAGlzbzJpc28yYXZjMQAA" type="video/mp4" />
+  </video>
+
+  <script type="module" src="./scales.js"></script>
+  <script type="module" src="./score.js"></script>
+  <script type="module" src="./app.js"></script>
+
+  <script>
+    // 「開始」→ ゲート表示（このときのみ）
+    document.addEventListener('DOMContentLoaded',()=>{
+      const startBtn = document.getElementById('start');
+      const gate = document.getElementById('gate');
+      const permitBtn = document.getElementById('permit');
+      const showGate = () => { gate.classList.add('show'); gate.setAttribute('aria-hidden','false'); };
+      startBtn.addEventListener('pointerup', showGate);
+      startBtn.addEventListener('touchend', showGate);
+      startBtn.addEventListener('click', showGate);
+      ['pointerup','touchend','click'].forEach(ev=>permitBtn.addEventListener(ev,()=>window.__permit()));
+    });
+  </script>
+</body>
+</html>
