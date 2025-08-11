@@ -84,7 +84,6 @@
   </header>
 
   <main>
-    <!-- HUD -->
     <section id="hud">
       <div id="score-panel">
         <div id="big-score" aria-live="polite">—</div>
@@ -136,7 +135,7 @@
     </div>
   </div>
 
-  <!-- 画面フラッシュ -->
+  <!-- 画面フラッシュ／トースト -->
   <div id="hud-flash"></div>
   <div id="toast" aria-live="polite" aria-atomic="true"></div>
 
@@ -150,12 +149,15 @@
   <script type="module" src="./app.js"></script>
 
   <script>
-    // 「開始」→ ゲート表示（このときのみ）
+    // 「開始」→ ゲート表示（実行中は出さない）
     document.addEventListener('DOMContentLoaded',()=>{
       const startBtn = document.getElementById('start');
       const gate = document.getElementById('gate');
       const permitBtn = document.getElementById('permit');
-      const showGate = () => { gate.classList.add('show'); gate.setAttribute('aria-hidden','false'); };
+      const showGate = () => {
+        if (document.body.classList.contains('running')) return;
+        gate.classList.add('show'); gate.setAttribute('aria-hidden','false');
+      };
       startBtn.addEventListener('pointerup', showGate);
       startBtn.addEventListener('touchend', showGate);
       startBtn.addEventListener('click', showGate);
