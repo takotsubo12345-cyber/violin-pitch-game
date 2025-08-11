@@ -1,4 +1,4 @@
-/* style.css */
+/* style.css（変更あり） */
 :root{
   --bg:#0b0d12; --bg-arcade:#120a1e; --fg:#e8eef7; --accent:#2dd4bf; --line:#1f2937;
   --good:#10b981; --mid:#f59e0b; --bad:#ef4444; --violet:#7c3aed;
@@ -8,8 +8,14 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
   font-family:system-ui,-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Yu Gothic",Roboto,sans-serif}
 body.arcade{ background: radial-gradient(1200px 400px at 50% -10%, #2a1a4a, var(--bg-arcade)); }
 
+/* 全画面花火（他ウィンドウ無関係で常に中央発火） */
+#sparkfx{
+  position:fixed; inset:0; width:100vw; height:100vh;
+  pointer-events:none; z-index:10000; /* 最前面。操作は透過 */
+}
+
 #topbar{
-  position:sticky; top:0; z-index:10000;
+  position:sticky; top:0; z-index:9000;
   display:flex; flex-wrap:wrap; gap:8px 10px; align-items:center; justify-content:space-between;
   padding:6px 10px; background:#0f131a; border-bottom:1px solid var(--line);
 }
@@ -61,14 +67,6 @@ main{padding:8px 10px 14px;max-width:880px;margin:0 auto}
 #staff-wrap{position:relative;width:96%;margin:0 auto;height:320px;background:#0f131a;border:1px solid var(--line);border-radius:12px;overflow:visible}
 @media (max-width:640px){ #staff-wrap{width:96%;height:300px} }
 
-/* 花火キャンバスは画面基準で固定表示（他ウィンドウに影響されない） */
-#spark{
-  position:fixed;
-  inset:0;
-  pointer-events:none;
-  z-index:9996;
-}
-
 #staff{position:absolute;inset:0;z-index:1}
 /* 線間距離をわずかに狭く（縦縮小） */
 #staff svg{transform:scaleY(.92); transform-origin:center}
@@ -86,8 +84,22 @@ body.arcade .ledger-line{stroke:#fff!important;stroke-width:3px!important;opacit
 #page-label{font-size:11px;color:#9ca3af}
 
 /* フラッシュ（0.5s固定で戻る） */
-#hud-flash{position:fixed;inset:0;background:transparent;opacity:0;pointer-events:none;transition:opacity .5s ease, background-color .5s ease;z-index:9997}
+#hud-flash{position:fixed;inset:0;background:transparent;opacity:0;pointer-events:none;transition:opacity .5s ease, background-color .5s ease;z-index:9994}
 #hud-flash.show{opacity:.45}
+
+/* トースト */
 #toast{position:fixed;left:0;right:0;bottom:0;padding:8px 10px;font-size:12px;text-align:center;background:rgba(40,40,40,.95);color:#fff;transform:translateY(100%);transition:transform .25s ease;z-index:9999}
 #toast.show{transform:translateY(0)}
 #toast.warn{background:#d97706} #toast.error{background:#b91c1c} #toast.info{background:#374151}
+#toast.tiny{font-size:11px;padding:6px 8px}
+
+/* モーダル */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:9998}
+.modal.show{display:flex}
+.modal .card{width:min(92%,540px); background:#0b1020; border:1px solid #20304a; border-radius:14px; padding:16px; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.5);}
+.modal .label{font-size:13px;opacity:.8;margin-bottom:6px}
+#praise{font-size:18px;margin:6px 0}
+#details{font-size:12px;opacity:.85;margin-bottom:8px}
+.modal .buttons{display:flex;gap:8px}
+#again{background:#10b981} #close{background:#374151}
+#permit{background:#2563eb}

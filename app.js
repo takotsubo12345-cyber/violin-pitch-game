@@ -1,4 +1,6 @@
-// app.js
+// app.js（変更あり：花火を全画面中心に）
+// マイク：開始→結果までON。停止/離脱/非可視でOFF。
+// 🎮モード：32問・C6以下・連続同音名(#/b含む)禁止。
 import { A4, getKeys, makeExerciseAll, letterFreqWithAcc } from "./scales.js";
 import { renderTwoBars } from "./score.js";
 
@@ -44,7 +46,7 @@ const ui = {
   bigScore: $("#big-score"), advice: $("#advice"),
   bar: $("#cents-bar"), barNeedle: $("#bar-needle"),
 
-  staffWrap: $("#staff-wrap"), spark: $("#spark"),
+  staffWrap: $("#staff-wrap"),
   prog: $("#prog"), pageLabel: $("#page-label"),
 
   gate: $("#gate"),
@@ -54,6 +56,8 @@ const ui = {
   noSleep: $("#nosleep"),
 
   modeName: $("#mode-name"), timer: $("#timer"),
+
+  sparkFx: $("#sparkfx"),
 };
 
 // 状態
@@ -96,8 +100,8 @@ function hardStop(reason=""){
   state.stream = null; state.ac=null; state.analyser=null; state.buf=null;
   state.source=null; state.hpf=null; state.peak=null;
   state.running=false; document.body.classList.remove("running");
-  ui.stop.disabled = true; // 開始は常に操作可（配色で状態表示）
-  // 取りこぼしガード（背面でも止める）
+  ui.stop.disabled = true;
+  // 背面でも完全停止（取りこぼし防止）
   setTimeout(()=>{ stopAllTracks(); closeAudio(); }, 600);
   setTimeout(()=>{ stopAllTracks(); closeAudio(); }, 1200);
   if(reason) pushErr(reason);
@@ -112,7 +116,6 @@ function hardStop(reason=""){
   const target = (ev==="visibilitychange"||ev==="webkitvisibilitychange") ? document : window;
   target.addEventListener(ev, handler, {passive:true,capture:true});
 });
-// 背面監視タイマ（1秒ごと）
 setInterval(()=>{ if(document.hidden && state.running){ hardStop("背面監視タイマで停止"); } }, 1000);
 
 // 譜面非表示でも停止
@@ -197,7 +200,7 @@ function highlightCurrentNote(){
 
 // 許可イベント（開始ボタン → ゲート表示 → 許可時のみ start()）
 window.addEventListener("app-permit", async ()=>{
-  try { await start(); } catch(err){ pushErr(err?.message||String(err)); }
+  try { await start(); } catch(err){ pushErr(err.message||String(err)); }
 });
 
 // ボタン
@@ -237,7 +240,7 @@ async function start(){
   ui.noSleep.play().catch(()=>{});
   const ac = new (window.AudioContext||window.webkitAudioContext)({ latencyHint: "interactive" });
 
-  // 許可ダイアログ（開始時のみ）
+  // 許可ダイアログ
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, sampleRate: ac.sampleRate, echoCancellation:false, noiseSuppression:false, autoGainControl:false }
   });
@@ -254,7 +257,6 @@ async function start(){
   state.buf = new Float32Array(analyser.fftSize);
   state.running = true; document.body.classList.add("running");
   ui.stop.disabled = false;
-  // ゲートは閉じる（念のため）
   const g=document.getElementById("gate"); if(g){ g.classList.remove("show"); g.setAttribute("aria-hidden","true"); }
   loop();
 }
@@ -303,22 +305,33 @@ function isWrongOctave(freq, fRef, passBand){
   return Math.abs(cents) <= passBand;
 }
 
-// ============ 花火：画面中央付近（譜面より少し下）で発火 ============
-// 画面基準の固定キャンバスに描画するので、他のウィンドウの影響を受けない
+/* ===== 全画面花火：常に画面中央で大きく発火 ===== */
 const sparks = [];
 let sparkRunning = false;
+let sparkDPR = 1;
+function resizeSparkFx(){
+  const c = ui.sparkFx;
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  sparkDPR = dpr;
+  c.width = Math.floor(window.innerWidth * dpr);
+  c.height = Math.floor(window.innerHeight * dpr);
+  // CSSサイズは100vw/100vh（style.cssで指定済み）
+}
+window.addEventListener("resize", resizeSparkFx, {passive:true});
+resizeSparkFx();
+
 function ensureSparkLoop(){
   if(sparkRunning) return; sparkRunning = true;
-  const cvs = ui.spark; const ctx = cvs.getContext("2d");
+  const cvs = ui.sparkFx; const ctx = cvs.getContext("2d");
   function loop(){
     if(!sparkRunning) return;
-    const W = cvs.width=cvs.clientWidth; const H=cvs.height=cvs.clientHeight;
+    const W = cvs.width, H = cvs.height;
     ctx.clearRect(0,0,W,H);
     const t = now();
     for(let i=sparks.length-1;i>=0;i--){
       const p = sparks[i];
       if(t - p.t0 > p.life){ sparks.splice(i,1); continue; }
-      p.vy += 0.010; p.x += p.vx; p.y += p.vy;
+      p.vy += 0.010*sparkDPR; p.x += p.vx; p.y += p.vy;
       p.size *= 0.996; p.alpha *= 0.985;
       ctx.globalCompositeOperation = "lighter";
       if(p.type==="emoji"){
@@ -336,51 +349,47 @@ function ensureSparkLoop(){
   }
   requestAnimationFrame(loop);
 }
-function addBurst(x,y,{count=460, life=2100, color="hsl(140,100%,65%)", big=1.6}={}){
-  const cvs = ui.spark;
-  // 直前にキャンバス実寸を確定（0,0起点防止）
-  cvs.width = cvs.clientWidth; cvs.height = cvs.clientHeight;
+function addBurst(x,y,{count=600, life=2200, color="hsl(140,100%,65%)", big=1.8}={}){
   const spread = 1 + big*0.9;
   for(let i=0;i<count;i++){
     const ang = Math.random()*Math.PI*2;
-    const speed = spread*(1.2 + Math.random()*5.6);
+    const speed = spread*(1.5 + Math.random()*6.2)*sparkDPR;
     sparks.push({
       type:"dot",
-      x: x + (Math.random()-0.5)*20, y: y + (Math.random()-0.5)*12,
-      vx:Math.cos(ang)*speed, vy:Math.sin(ang)*speed - 1.5*big,
-      size: 2.0 + Math.random()*4.2*big, alpha: 1.0,
-      t0: now(), life: life + Math.random()*700, color
+      x: x + (Math.random()-0.5)*24*sparkDPR,
+      y: y + (Math.random()-0.5)*16*sparkDPR,
+      vx:Math.cos(ang)*speed, vy:Math.sin(ang)*speed - 1.5*big*sparkDPR,
+      size: (2.0 + Math.random()*4.2*big)*sparkDPR, alpha: 1.0,
+      t0: now(), life: life + Math.random()*800, color
     });
   }
   ensureSparkLoop();
 }
 function addOcto(x,y,many=false){
-  const cvs = ui.spark; cvs.width = cvs.clientWidth; cvs.height = cvs.clientHeight;
-  const n = many? 46 : 20;
+  const n = many? 60 : 26;
   for(let i=0;i<n;i++){
     sparks.push({
-      type:"emoji", x: x + (Math.random()-0.5)*60, y: y+8,
-      vx:(Math.random()-0.5)*2.1, vy:-2.0 - Math.random()*1.2,
-      size: 5+Math.random()*3.6, alpha:1, t0:now(), life:2500+Math.random()*600
+      type:"emoji", x: x + (Math.random()-0.5)*70*sparkDPR, y: y+8*sparkDPR,
+      vx:(Math.random()-0.5)*2.2*sparkDPR, vy:-2.0*sparkDPR - Math.random()*1.4*sparkDPR,
+      size: (5+Math.random()*3.8)*sparkDPR, alpha:1, t0:now(), life:2600+Math.random()*700
     });
   }
   ensureSparkLoop();
 }
 function fireworkFor(score, centsAbs){
-  // 画面の左右中央・やや下（62%）で発火
-  const W = ui.spark.width = ui.spark.clientWidth;
-  const H = ui.spark.height = ui.spark.clientHeight;
+  // 画面の真ん中で発火（他ウィンドウに依存しない）
+  const W = ui.sparkFx.width, H = ui.sparkFx.height;
   const cx = W * 0.5;
-  const cy = H * 0.62;
-  const base = Math.round(50 * Math.exp((score-85)/5.3));
-  const count = clamp(base, 50, 900);
+  const cy = H * 0.52; // ほんの少し下
+  const base = Math.round(60 * Math.exp((score-85)/5.1));
+  const count = clamp(base, 80, 1200);
   let col, flash;
-  if(centsAbs<=1){ col="hsl(5,100%,63%)";  flash="rgba(255,80,80,.50)"; }
+  if(centsAbs<=1){ col="hsl(5,100%,63%)"; flash="rgba(255,80,80,.50)"; }
   else if(centsAbs<=3){ col="hsl(210,100%,65%)"; flash="rgba(110,170,255,.50)"; }
   else { col="hsl(140,100%,62%)"; flash="rgba(90,230,170,.50)"; }
-  addBurst(cx, cy, {count, life: 2400, color: col, big: (score>=98?2.0:1.5)});
-  hudFlash(flash, score>=99?1: score>=95?0.85:0.65);
-  if(centsAbs<=0.5){ addOcto(cx, cy-10, true); }
+  addBurst(cx, cy, {count, life: 2600, color: col, big: (score>=98?2.2:1.7)});
+  hudFlash(flash, score>=99?1: score>=95?0.9:0.7);
+  if(centsAbs<=0.5){ addOcto(cx, cy-14*sparkDPR, true); }
 }
 
 // メインループ
